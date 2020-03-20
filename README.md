@@ -1,4 +1,2 @@
-# hello-world
-This is the hello-world repo
-
-I am amazed!
+# UM-Kafka-Connectors
+This is the Ultra Messaging Kafka connector repository
