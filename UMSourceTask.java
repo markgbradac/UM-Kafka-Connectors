@@ -49,13 +49,10 @@ public class UMSourceTask extends SourceTask {
     private String um_topic = null;
     private String kafka_topic = null;
     private int batchSize = UMSourceConnector.DEFAULT_TASK_BATCH_SIZE;
-    private Long streamOffset;
     private LBM lbm;
 
     private static int while_loop_count = 0;
-
-    BlockingQueue<LBMMessage> msgQ = new LinkedBlockingDeque<>(1000);
-
+    private BlockingQueue<LBMMessage> msgQ = new LinkedBlockingDeque<>(1000);
     LBMObjectRecycler objRec = new LBMObjectRecycler();
 
     @Override
@@ -71,7 +68,6 @@ public class UMSourceTask extends SourceTask {
         System.out.println("UMSourceTask::start() um_wildcard_pattern: " + um_wildcard_pattern);
         um_config_filename = props.get(UMSourceConnector.UM_CONFIG_FILE);
         System.out.println("UMSourceTask::start() um_config_filename: " + um_config_filename);
-        // TODO - handle multiple topics and/or partitioning
         um_topic = props.get(UMSourceConnector.UM_TOPIC);
         System.out.println("UMSourceTask::start() um_topic: " +  um_topic);
         kafka_topic = props.get(UMSourceConnector.KAFKA_TOPIC);
@@ -104,15 +100,8 @@ public class UMSourceTask extends SourceTask {
         try {
             ctx_attr = new LBMContextAttributes();
             ctx_attr.setObjectRecycler(objRec, null);
-        } catch (LBMException ex) {
-            String errStr = "Error creating context attributes: " + ex.toString();
-            logger.error(errStr, ex);
-            throw new ConnectException(errStr, ex);
-        }
-        LBMWRcvSourceNotify srcNotify = new LBMWRcvSourceNotify();
-        ctx_attr.enableSourceNotification();
-        LBMContext ctx = null;
-        try {
+            //ctx_attr.setValue("ume_session_id", "0xCAFED00D");
+            ctx_attr.enableSourceNotification();
             /* ctx_attr.setValue("request_tcp_interface", "192.168.254.0/24");
             ctx_attr.setValue("default_interface", "192.168.254.0/24");
             ctx_attr.setValue("request_tcp_port_low", "31000");
@@ -121,6 +110,14 @@ public class UMSourceTask extends SourceTask {
             ctx_attr.setValue("resolver_multicast_address", "225.11.15.85");
             ctx_attr.setValue("resolver_multicast_port", "13965");
              */
+        } catch (LBMException ex) {
+            String errStr = "Error creating context attributes: " + ex.toString();
+            logger.error(errStr, ex);
+            throw new ConnectException(errStr, ex);
+        }
+        LBMWRcvSourceNotify srcNotify = new LBMWRcvSourceNotify();
+        LBMContext ctx = null;
+        try {
             ctx = new LBMContext(ctx_attr);
         } catch (LBMException ex) {
             String errStr = ("Error creating context: " + ex.toString());
@@ -138,6 +135,9 @@ public class UMSourceTask extends SourceTask {
         LBMWildcardReceiverAttributes wrcv_attr = null;
         try {
             wrcv_attr = new LBMWildcardReceiverAttributes();
+            //wrcv_attr.setValue("ume_explicit_ack_only", "1");
+            //wrcv_attr.setValue("ume_activity_timeout", "5000");
+            //wrcv_attr.setValue("ume_state_lifetime", "10000");
         } catch (LBMException ex) {
             String errStr = ("Error creating wildcard attributes: " + ex.toString());
             logger.error(errStr, ex);
@@ -173,7 +173,6 @@ public class UMSourceTask extends SourceTask {
 
     @Override
     public List<SourceRecord> poll() throws InterruptedException {
-
         ArrayList<SourceRecord> records = null;
         records = new ArrayList<>();
 
@@ -182,23 +181,13 @@ public class UMSourceTask extends SourceTask {
             while_loop_count = 0;
         }
 
-        //Map<String, Object> offset = context.offsetStorageReader().offset(Collections.singletonMap(FILENAME_FIELD, filename));
         LBMMessage msg = null;
         while ((msg = msgQ.poll()) != null) {
-            {
-                Map<String, Object> offset = null;
-                offset = context.offsetStorageReader().offset(offsetKey(msg.topicName()));
-                Object lastRecordedOffset = offset.get(POSITION_FIELD);
-                if (lastRecordedOffset != null && !(lastRecordedOffset instanceof Long))
-                    throw new ConnectException("poll() - last recorded offset position is the incorrect type");
-                if (lastRecordedOffset != null) {
-                    logger.info("poll() - found previous offset[{}]", lastRecordedOffset);
-                }
-            }
             logger.info("poll() - received record topic[" + msg.topicName() + "] seqnum[" + msg.sequenceNumber() + "] for kafka topic[" + kafka_topic + "] msg.dataLength[" + msg.dataLength() + "] msg.dataString()[" + msg.dataString() + "]");
             logger.info("         msg.data().length[" + msg.data().length + "] Arrays.toString(msg.data()[" + Arrays.toString(msg.data()) + "]");
             SourceRecord record = new SourceRecord(offsetKey(msg.topicName()), offsetValue(msg.sequenceNumber()),
                     kafka_topic, STRING_SCHEMA, msg.topicName(), BYTES_SCHEMA, msg.data());
+            UMTopic.logLastSentSQN(msg.topicName(), msg.source(), msg.sequenceNumber());
             records.add(record);
             if (records.size() >= batchSize) {
                 return records;
@@ -206,6 +195,7 @@ public class UMSourceTask extends SourceTask {
         }
         return records;
     }
+
 
     @Override
     public void stop() {
@@ -232,15 +222,92 @@ public class UMSourceTask extends SourceTask {
     private String logFilename() {
         return um_config_filename == null ? "stdin" : um_config_filename;
     }
+
+    public void commit() {
+        for (Map.Entry<String, UMTopic> entry : UMTopic.topicMap.entrySet()) {
+            String topic = entry.getValue().topicString;
+            Map<String, Object> offset = null;
+            offset = context.offsetStorageReader().offset(offsetKey(topic));
+            if (offset != null) {   // offset is null until the first commit after 1st write to a partition completes
+                Object lastRecordedOffset = offset.get(POSITION_FIELD);
+                if (lastRecordedOffset != null && !(lastRecordedOffset instanceof Long)) {
+                    throw new ConnectException("commit() - last recorded offset position is the incorrect type");
+                }
+                if (lastRecordedOffset != null) {
+                    logger.info("commit() - last recorded offset[{}] for topic[{}] from source[{}] with last sent sqn[{}]", lastRecordedOffset, topic, entry.getValue().sourceString, entry.getValue().lastSentSQN);
+                    LinkedList<DeferredAck> list = entry.getValue().deferredAckList;
+                    while (list.size() > 0) {
+                        long sqn = list.getFirst().get_sqn();
+                        if (sqn <= (Long)lastRecordedOffset) {
+                            DeferredAck ackSQN = list.removeFirst();
+                            UMEMessageAck ack = ackSQN.get_ack();
+                            if (ack != null) {
+                                try {
+                                    ack.dispose();
+                                } catch (LBMException ex) {
+                                    ex.printStackTrace();
+                                    throw new ConnectException("commit() - ack dispose failed");
+                                }
+                            }
+                            logger.info("           freed [{}]", sqn);
+                        } else {
+                            break;
+                        }
+                    }
+                }
+            } else {
+                logger.info("commit() - offset was null for topic[{}]; offset is assumed to be 0", topic);
+            }
+        }
+    }
 }
 
-//NEW START
 class LBMWRcvSourceNotify implements LBMSourceNotification {
-    private static final Logger logger = LoggerFactory.getLogger(LBMWRcvSourceNotify.class);
+    private final Logger logger = LoggerFactory.getLogger(LBMWRcvSourceNotify.class);
 
     public int sourceNotification(String topic, String source, Object cbArg) {
         logger.info("new topic [" + topic + "], source [" + source + "]");
         return 0;
+    }
+}
+
+class DeferredAck {
+    private UMEMessageAck _ack;
+    private long _sqn;
+    public DeferredAck(UMEMessageAck ack, long sqn) { _ack = ack; _sqn = sqn; }
+    public UMEMessageAck get_ack() { return _ack; }
+    public long get_sqn() { return _sqn; }
+}
+
+class UMTopic {
+    private static final Logger logger = LoggerFactory.getLogger(UMTopic.class);
+    public static HashMap<String, UMTopic> topicMap = new HashMap<String, UMTopic>(); // set of known topics by source
+    public String topicString = null;                       // duh
+    public String sourceString = null;                      // topic source string
+    public String sourceTopicString = null;                 // topic map key
+    public LinkedList<DeferredAck> deferredAckList = null;  // list of deferred acks for this source/topic pairing
+    public Boolean committed = null;                        // true if any messages are committed
+    public long lastSentSQN = -1;                           // the last sent sequence number sent to kafka
+
+    public UMTopic(String topicStr, String sourceStr) {
+        topicString = topicStr;
+        sourceString = sourceStr;
+        sourceTopicString = topicStr + sourceStr;
+        deferredAckList = new LinkedList<DeferredAck>();
+        committed = false;
+        topicMap.put(sourceTopicString, this);
+        logger.info("UMTopics - created topic [{}] from source[{}]; current number of known topics[{}]", topicString, sourceString, topicMap.size());
+    }
+
+    public static void logLastSentSQN(String topicName, String source, long sequenceNumber) {
+        String sourceTopicString = topicName + source;
+        if (UMTopic.topicMap.containsKey(sourceTopicString)) {
+            //logger.info("logLastSentSQN() - logged sqn[{}] on topic[{}] from source[{}]", sequenceNumber, topicName, source);
+            UMTopic entry = UMTopic.topicMap.get(sourceTopicString);
+            entry.lastSentSQN = sequenceNumber;
+        } else {
+            logger.warn("logLastSentSQN() - failed to log sqn[{}] on topic[{}] from source[{}]", sequenceNumber, topicName, source);
+        }
     }
 }
 
@@ -278,13 +345,20 @@ class LBMWRcvReceiver implements LBMReceiverCallback, LBMImmediateMessageCallbac
         _wrcv = lbmrcv;
     }
 
-    public int onReceiveImmediate(Object cbArg, LBMMessage msg)
-    {
+    public int onReceiveImmediate(Object cbArg, LBMMessage msg) {
         imsg_count++;
         return onReceive(cbArg, msg);
     }
 
     Boolean handleMsgData(Object cbArg, LBMMessage msg) {
+        String sourceTopicString = msg.topicName() + msg.source();
+        if (!UMTopic.topicMap.containsKey(sourceTopicString)) {
+            logger.info("handleMsgData() - discovered a new topic[{}] from source[{}]", msg.topicName(), msg.source());
+            new UMTopic(msg.topicName(), msg.source());
+        }
+        UMTopic entry = UMTopic.topicMap.get(sourceTopicString);
+        entry.deferredAckList.add(new DeferredAck(null /* msg.extractUMRAck() */, msg.sequenceNumber()));
+
         logger.info("handleMsgData() - received msg topic[" + msg.topicName() + "] seqn[" + msg.sequenceNumber() + "] data[" + msg.dataString() + "]");
         if (stotal_msg_count == 0)
             data_start_time = System.currentTimeMillis();
@@ -442,11 +516,8 @@ class LBMWRcvReceiver implements LBMReceiverCallback, LBMImmediateMessageCallbac
         return 0;
     }
 
-    private void end()
-    {
-        logger.info("Quitting.... received "
-                + total_msg_count
-                + " messages");
+    private void end() {
+        logger.info("Quitting.... received " + total_msg_count + " messages");
         System.exit(0);
     }
 }
