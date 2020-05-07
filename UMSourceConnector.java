@@ -54,9 +54,9 @@ public class UMSourceConnector extends SourceConnector {
             .define(KAFKA_TOPIC, Type.STRING, DEFAULT_KAFKA_TOPIC, Importance.HIGH,"The kafka topic to publish data to")
             .define(TASK_BATCH_SIZE_CONFIG, Type.INT, DEFAULT_TASK_BATCH_SIZE, Importance.LOW,"The maximum number of records the Source task can read from UM topic");
 
-    private um_kafka_config um_config = new um_kafka_config();
+    private final um_kafka_config um_config = new um_kafka_config();
 
-    class um_kafka_config {
+    static class um_kafka_config {
         String um_wildcard_pattern;
         String um_config_file;
         String um_license_file;

@@ -52,8 +52,8 @@ public class UMSourceTask extends SourceTask {
     private LBM lbm;
 
     private static int while_loop_count = 0;
-    private BlockingQueue<LBMMessage> msgQ = new LinkedBlockingDeque<>(1000);
-    LBMObjectRecycler objRec = new LBMObjectRecycler();
+    final private BlockingQueue<LBMMessage> msgQ = new LinkedBlockingDeque<>(1000);
+    final LBMObjectRecycler objRec = new LBMObjectRecycler();
 
     @Override
     public String version() {
@@ -96,13 +96,14 @@ public class UMSourceTask extends SourceTask {
             throw new ConnectException(errStr, ex);
         }
 
-        LBMContextAttributes ctx_attr = null;
+        LBMContextAttributes ctx_attr;
         try {
             ctx_attr = new LBMContextAttributes();
             ctx_attr.setObjectRecycler(objRec, null);
-            //ctx_attr.setValue("ume_session_id", "0xCAFED00D");
             ctx_attr.enableSourceNotification();
-            /* ctx_attr.setValue("request_tcp_interface", "192.168.254.0/24");
+            /*
+            ctx_attr.setValue("ume_session_id", "0xCAFED00D");
+            ctx_attr.setValue("request_tcp_interface", "192.168.254.0/24");
             ctx_attr.setValue("default_interface", "192.168.254.0/24");
             ctx_attr.setValue("request_tcp_port_low", "31000");
             ctx_attr.setValue("request_tcp_port_high", "31100");
@@ -116,7 +117,7 @@ public class UMSourceTask extends SourceTask {
             throw new ConnectException(errStr, ex);
         }
         LBMWRcvSourceNotify srcNotify = new LBMWRcvSourceNotify();
-        LBMContext ctx = null;
+        LBMContext ctx;
         try {
             ctx = new LBMContext(ctx_attr);
         } catch (LBMException ex) {
@@ -132,12 +133,23 @@ public class UMSourceTask extends SourceTask {
             logger.error(errStr, ex);
             throw new ConnectException(errStr, ex);
         }
-        LBMWildcardReceiverAttributes wrcv_attr = null;
+        LBMReceiverAttributes rcv_attr;
+        try {
+            rcv_attr = new LBMReceiverAttributes();
+            rcv_attr.setValue("use_session_id", "33");
+            rcv_attr.setValue("use_late_join", "1");
+            rcv_attr.setValue("use_otr", "2");
+            rcv_attr.setValue("ume_explicit_ack_only", "1");
+            rcv_attr.setValue("ume_activity_timeout", "2000");
+            rcv_attr.setValue("ume_state_lifetime", "3000");
+        } catch (LBMException ex) {
+            String errStr = ("Error creating receiver attributes: " + ex.toString());
+            logger.error(errStr, ex);
+            throw new ConnectException(errStr, ex);
+        }
+        LBMWildcardReceiverAttributes wrcv_attr;
         try {
             wrcv_attr = new LBMWildcardReceiverAttributes();
-            //wrcv_attr.setValue("ume_explicit_ack_only", "1");
-            //wrcv_attr.setValue("ume_activity_timeout", "5000");
-            //wrcv_attr.setValue("ume_state_lifetime", "10000");
         } catch (LBMException ex) {
             String errStr = ("Error creating wildcard attributes: " + ex.toString());
             logger.error(errStr, ex);
@@ -148,7 +160,7 @@ public class UMSourceTask extends SourceTask {
         try {
             lbmwrcv = new LBMWildcardReceiver(ctx,
                     um_wildcard_pattern,
-                    null,
+                    rcv_attr,
                     wrcv_attr,
                     wrcv,
                     null);
@@ -172,8 +184,8 @@ public class UMSourceTask extends SourceTask {
     }
 
     @Override
-    public List<SourceRecord> poll() throws InterruptedException {
-        ArrayList<SourceRecord> records = null;
+    public List<SourceRecord> poll() {
+        ArrayList<SourceRecord> records;
         records = new ArrayList<>();
 
         if (while_loop_count++ >= 10000001) {
@@ -181,7 +193,7 @@ public class UMSourceTask extends SourceTask {
             while_loop_count = 0;
         }
 
-        LBMMessage msg = null;
+        LBMMessage msg;
         while ((msg = msgQ.poll()) != null) {
             logger.info("poll() - received record topic[" + msg.topicName() + "] seqnum[" + msg.sequenceNumber() + "] for kafka topic[" + kafka_topic + "] msg.dataLength[" + msg.dataLength() + "] msg.dataString()[" + msg.dataString() + "]");
             logger.info("         msg.data().length[" + msg.data().length + "] Arrays.toString(msg.data()[" + Arrays.toString(msg.data()) + "]");
@@ -195,7 +207,6 @@ public class UMSourceTask extends SourceTask {
         }
         return records;
     }
-
 
     @Override
     public void stop() {
@@ -219,14 +230,10 @@ public class UMSourceTask extends SourceTask {
         return Collections.singletonMap(POSITION_FIELD, pos);
     }
 
-    private String logFilename() {
-        return um_config_filename == null ? "stdin" : um_config_filename;
-    }
-
     public void commit() {
         for (Map.Entry<String, UMTopic> entry : UMTopic.topicMap.entrySet()) {
             String topic = entry.getValue().topicString;
-            Map<String, Object> offset = null;
+            Map<String, Object> offset;
             offset = context.offsetStorageReader().offset(offsetKey(topic));
             if (offset != null) {   // offset is null until the first commit after 1st write to a partition completes
                 Object lastRecordedOffset = offset.get(POSITION_FIELD);
@@ -272,8 +279,8 @@ class LBMWRcvSourceNotify implements LBMSourceNotification {
 }
 
 class DeferredAck {
-    private UMEMessageAck _ack;
-    private long _sqn;
+    final private UMEMessageAck _ack;
+    final private long _sqn;
     public DeferredAck(UMEMessageAck ack, long sqn) { _ack = ack; _sqn = sqn; }
     public UMEMessageAck get_ack() { return _ack; }
     public long get_sqn() { return _sqn; }
@@ -281,19 +288,19 @@ class DeferredAck {
 
 class UMTopic {
     private static final Logger logger = LoggerFactory.getLogger(UMTopic.class);
-    public static HashMap<String, UMTopic> topicMap = new HashMap<String, UMTopic>(); // set of known topics by source
-    public String topicString = null;                       // duh
-    public String sourceString = null;                      // topic source string
-    public String sourceTopicString = null;                 // topic map key
-    public LinkedList<DeferredAck> deferredAckList = null;  // list of deferred acks for this source/topic pairing
-    public Boolean committed = null;                        // true if any messages are committed
-    public long lastSentSQN = -1;                           // the last sent sequence number sent to kafka
+    final public static HashMap<String, UMTopic> topicMap = new HashMap<>(); // set of known topics by source
+    final public String topicString;                       // duh
+    final public String sourceString;                      // topic source string
+    final public String sourceTopicString;                 // topic map key
+    final public LinkedList<DeferredAck> deferredAckList;  // list of deferred acks for this source/topic pairing
+    final public Boolean committed;                        // true if any messages are committed
+    public long lastSentSQN = -1;                          // the last sent sequence number sent to kafka
 
     public UMTopic(String topicStr, String sourceStr) {
         topicString = topicStr;
         sourceString = sourceStr;
         sourceTopicString = topicStr + sourceStr;
-        deferredAckList = new LinkedList<DeferredAck>();
+        deferredAckList = new LinkedList<>();
         committed = false;
         topicMap.put(sourceTopicString, this);
         logger.info("UMTopics - created topic [{}] from source[{}]; current number of known topics[{}]", topicString, sourceString, topicMap.size());
@@ -307,6 +314,16 @@ class UMTopic {
             entry.lastSentSQN = sequenceNumber;
         } else {
             logger.warn("logLastSentSQN() - failed to log sqn[{}] on topic[{}] from source[{}]", sequenceNumber, topicName, source);
+        }
+    }
+
+    public static void removeTopic(String topicStr, String sourceStr) {
+        String sourceTopicString = topicStr + sourceStr;
+        if (UMTopic.topicMap.containsKey(sourceTopicString)) {
+            UMTopic.topicMap.remove(sourceTopicString);
+            logger.info("removeTopic() - removed topic[{}] from source[{}] from UMTopic.map", topicStr, sourceStr);
+        } else {
+            logger.warn("removeTopic() - failed to remove topic[{}] from source[{}] from UMTopic.map", topicStr, sourceStr);
         }
     }
 }
@@ -324,8 +341,8 @@ class LBMWRcvReceiver implements LBMReceiverCallback, LBMImmediateMessageCallbac
     public long otr_msgs = 0;
     public LBMWildcardReceiver _wrcv;
 
-    boolean _verbose = false;
-    boolean _end_on_eos = false;
+    final boolean _verbose = false;
+    final boolean _end_on_eos = false;
 
     public long data_start_time = 0;
     public long data_end_time = 0;
@@ -333,7 +350,7 @@ class LBMWRcvReceiver implements LBMReceiverCallback, LBMImmediateMessageCallbac
     public int stotal_msg_count = 0;
     public long total_byte_count = 0;
 
-    BlockingQueue<LBMMessage> msgQ;
+    final public BlockingQueue<LBMMessage> msgQ;
 
     private static final Logger logger = LoggerFactory.getLogger(LBMWRcvReceiver.class);
 
@@ -350,14 +367,18 @@ class LBMWRcvReceiver implements LBMReceiverCallback, LBMImmediateMessageCallbac
         return onReceive(cbArg, msg);
     }
 
-    Boolean handleMsgData(Object cbArg, LBMMessage msg) {
+    Boolean handleMsgData(LBMMessage msg) {
         String sourceTopicString = msg.topicName() + msg.source();
         if (!UMTopic.topicMap.containsKey(sourceTopicString)) {
             logger.info("handleMsgData() - discovered a new topic[{}] from source[{}]", msg.topicName(), msg.source());
             new UMTopic(msg.topicName(), msg.source());
         }
         UMTopic entry = UMTopic.topicMap.get(sourceTopicString);
-        entry.deferredAckList.add(new DeferredAck(null /* msg.extractUMRAck() */, msg.sequenceNumber()));
+        try {
+            entry.deferredAckList.add(new DeferredAck(msg.extractUMEAck(), msg.sequenceNumber()));
+        } catch (LBMException e) {
+            e.printStackTrace();
+        }
 
         logger.info("handleMsgData() - received msg topic[" + msg.topicName() + "] seqn[" + msg.sequenceNumber() + "] data[" + msg.dataString() + "]");
         if (stotal_msg_count == 0)
@@ -403,7 +424,7 @@ class LBMWRcvReceiver implements LBMReceiverCallback, LBMImmediateMessageCallbac
         switch (msg.type())
         {
             case LBM.MSG_DATA:
-                if (handleMsgData(cbArg, msg)) {
+                if (handleMsgData(msg)) {
                     doDispose = false;
                 } else {
                     logger.warn("onReceive() - TODO: what should we do about failed queuing?");
@@ -429,83 +450,121 @@ class LBMWRcvReceiver implements LBMReceiverCallback, LBMImmediateMessageCallbac
                 }
                 break;
             case LBM.MSG_BOS:
+                logger.info("LBM.MSG_BOS");
                 logger.info("onReceive() [" + msg.topicName() + "][" + msg.source() + "], Beginning of Transport Session");
                 break;
             case LBM.MSG_EOS:
+                logger.info("LBM.MSG_EOS");
                 logger.info("onReceive() [" + msg.topicName() + "][" + msg.source() + "], End of Transport Session");
-                subtotal_msg_count = 0;
+                try {
+                    _wrcv.deregister();
+                } catch (LBMException e) {
+                    e.printStackTrace();
+                }
+                UMTopic.removeTopic(msg.topicName(), msg.source());
                 if (_end_on_eos) {
                     end();
                 }
-                subtotal_msg_count = 0;
                 break;
             case LBM.MSG_UNRECOVERABLE_LOSS:
+                logger.info("LBM.MSG_UNRECOVERABLE_LOSS");
                 unrec_count++;
                 total_unrec_count++;
-                if (_verbose)
-                {
-                    long sqn = msg.sequenceNumber();
-                    if ((msg.flags() & (LBM.MSG_FLAG_HF_32 | LBM.MSG_FLAG_HF_64)) != 0) {
-                        sqn = msg.hfSequenceNumber();
-                    }
-                    System.out.format("[%s][%s][%s]%s%s-RESET\n", msg.topicName(), msg.source(), sqn >= 0 ? sqn : msg.hfSequenceNumberBigInt(),
-                            ((msg.flags() & LBM.MSG_FLAG_HF_64) != 0 ? "-HF64" : ""),
-                            ((msg.flags() & LBM.MSG_FLAG_HF_32) != 0 ? "-HF32" : ""));
-                }
-                break;
-            case LBM.MSG_UNRECOVERABLE_LOSS_BURST:
-                burst_loss++;
-                if (_verbose)
-                {
-                    System.out.print("[" + msg.topicName() + "][" + msg.source() + "],");
-                    System.out.println(" LOST BURST");
-                }
-                break;
-            case LBM.MSG_REQUEST:
-                logger.info("LBM.MSG_REQUEST");
-                if (handleMsgData(cbArg, msg)) {
-                    doDispose = false;
-                }
-                if (_verbose)
-                {
-                    System.out.print("Request ["
-                            + msg.topicName()
-                            + "]["
-                            + msg.source()
-                            + "], "
-                            + msg.sequenceNumber()
-                            + " bytes");
-                    System.out.println(msg.data().length + " bytes");
-                }
-                break;
-            case LBM.MSG_NO_SOURCE_NOTIFICATION:
-                System.out.println("["
-                        + msg.topicName()
-                        + "], no sources found for topic");
-                break;
-            case LBM.MSG_HF_RESET:
                 if (_verbose) {
                     long sqn = msg.sequenceNumber();
                     if ((msg.flags() & (LBM.MSG_FLAG_HF_32 | LBM.MSG_FLAG_HF_64)) != 0) {
                         sqn = msg.hfSequenceNumber();
                     }
-                    System.out.format("[%s][%s][%s]%s%s%s%s-RESET\n", msg.topicName(), msg.source(), sqn >= 0 ? sqn : msg.hfSequenceNumberBigInt(),
-                            ((msg.flags() & LBM.MSG_FLAG_RETRANSMIT) != 0 ? "-RX" : ""),
-                            ((msg.flags() & LBM.MSG_FLAG_OTR) != 0 ? "-OTR" : ""),
+                    logger.info("[{}][{}][{}]{}{}-RESET", msg.topicName(), msg.source(),
+                            ((sqn) >= 0 ? sqn : msg.hfSequenceNumberBigInt()),
                             ((msg.flags() & LBM.MSG_FLAG_HF_64) != 0 ? "-HF64" : ""),
                             ((msg.flags() & LBM.MSG_FLAG_HF_32) != 0 ? "-HF32" : ""));
                 }
                 break;
+            case LBM.MSG_UNRECOVERABLE_LOSS_BURST:
+                logger.info("LBM.MSG_UNRECOVERABLE_LOSS_BURST");
+                burst_loss++;
+                if (_verbose) {
+                    logger.info("[{}][{}], LOST BURST", msg.topicName(), msg.source());
+                }
+                break;
+            case LBM.MSG_REQUEST:
+                logger.info("LBM.MSG_REQUEST");
+                if (handleMsgData(msg)) {
+                    doDispose = false;
+                }
+                if (_verbose) {
+                    logger.info("Request [{}][{}], [{}] bytes [{}]",
+                        msg.topicName(), msg.source(), msg.sequenceNumber(), msg.data().length);
+                }
+                break;
+            case LBM.MSG_NO_SOURCE_NOTIFICATION:
+                logger.info("LBM.MSG_NO_SOURCE_NOTIFICATION");
+                logger.info("No source notification for topic [{}]: ", msg.topicName());
+                break;
+            case LBM.MSG_UME_REGISTRATION_ERROR:
+                logger.info("LBM.MSG_UME_REGISTRATION_ERROR");
+                logger.info("[{}][{}] UME registration error: [{}]", msg.topicName(), msg.source(), msg.data());
+                break;
+            case LBM.MSG_UME_REGISTRATION_SUCCESS:
+                logger.info("LBM.MSG_UME_REGISTRATION_SUCCESS");
+                logger.info("[{}][{}] UME registration successful. Src RegID [{}] Rcv RegID [{}]",
+                        msg.topicName(), msg.source(), msg.sourceRegistrationId(), msg.receiverRegistrationId());
+                break;
+            case LBM.MSG_UME_REGISTRATION_CHANGE:
+                logger.info("LBM.MSG_UME_REGISTRATION_CHANGE");
+                logger.info("[{}][{}] UME registration change: [{}]", msg.topicName(), msg.source(), msg.dataString());
+                break;
+            case LBM.MSG_UME_REGISTRATION_SUCCESS_EX:
+                logger.info("LBM.MSG_UME_REGISTRATION_SUCCESS_EX");
+                UMERegistrationSuccessInfo reg = msg.registrationSuccessInfo();
+                System.out.print("[" + msg.topicName() + "][" + msg.source()
+                        + "] store " + reg.storeIndex() + ": "
+                        + reg.store() + " UME registration successful. SrcRegID "
+                        + reg.sourceRegistrationId() + " RcvRegID " + reg.receiverRegistrationId()
+                        + ". Flags " + reg.flags() + " ");
+                if ((reg.flags() & LBM.MSG_UME_REGISTRATION_SUCCESS_EX_FLAG_OLD) != 0)
+                    System.out.print("OLD[SQN " + reg.sequenceNumber() + "] ");
+                if ((reg.flags() & LBM.MSG_UME_REGISTRATION_SUCCESS_EX_FLAG_NOCACHE) != 0)
+                    System.out.print("NOCACHE ");
+                if ((reg.flags() & LBM.MSG_UME_REGISTRATION_SUCCESS_EX_FLAG_SRC_SID) != 0) {
+                    System.out.print("Src Session ID 0x" + Long.toHexString(reg.sourceSessionId()) + " ");
+                }
+                System.out.println();
+                break;
+            case LBM.MSG_UME_REGISTRATION_COMPLETE_EX:
+                logger.info("LBM.MSG_UME_REGISTRATION_COMPLETE_EX");
+                UMERegistrationCompleteInfo regcomplete = msg.registrationCompleteInfo();
+                System.out.print("[" + msg.topicName() + "][" + msg.source()
+                        + "] UME registration complete. SQN " + regcomplete.sequenceNumber()
+                        + ". Flags " + regcomplete.flags() + " ");
+                if ((regcomplete.flags() & LBM.MSG_UME_REGISTRATION_COMPLETE_EX_FLAG_QUORUM) != 0) {
+                    System.out.print("QUORUM ");
+                }
+                if ((regcomplete.flags() & LBM.MSG_UME_REGISTRATION_COMPLETE_EX_FLAG_RXREQMAX) != 0) {
+                    System.out.print("RXREQMAX ");
+                }
+                if ((regcomplete.flags() & LBM.MSG_UME_REGISTRATION_COMPLETE_EX_FLAG_SRC_SID) != 0) {
+                    System.out.print("Src Session ID 0x" + Long.toHexString(regcomplete.sourceSessionId()) + " ");
+                }
+                System.out.println();
+                break;
             case LBM.MSG_UME_DEREGISTRATION_SUCCESS_EX:
-                System.out.print("DEREGISTRATION SUCCESSFUL ");
+                logger.info("LBM.MSG_UME_DEREGISTRATION_SUCCESS_EX");
+                UMEDeregistrationSuccessInfo dereg = msg.deregistrationSuccessInfo();
+                System.out.print("[" + msg.topicName() + "][" + msg.source()
+                        + "] store " + dereg.storeIndex() + ": "
+                        + dereg.store() + " UME deregistration successful. SrcRegID "
+                        + dereg.sourceRegistrationId() + " RcvRegID " + dereg.receiverRegistrationId()
+                        + ". Flags " + dereg.flags() + " ");
                 System.out.println();
                 break;
             case LBM.MSG_UME_DEREGISTRATION_COMPLETE_EX:
-                System.out.print("DEREGISTRATION COMPLETE ");
-                System.out.println();
+                logger.info("LBM.MSG_UME_DEREGISTRATION_COMPLETE_EX");
+                logger.info("[{}][{}] UME deregistration complete ex: ", msg.topicName(), msg.source());
                 break;
             default:
-                System.out.println("Unknown lbm_msg_t type " + msg.type() + " [" + msg.topicName() + "][" + msg.source() + "]");
+                logger.warn("Unknown lbm_msg_t type[{}][{}][{}]", msg.type(), msg.topicName(), msg.source());
                 break;
         }
         System.out.flush();

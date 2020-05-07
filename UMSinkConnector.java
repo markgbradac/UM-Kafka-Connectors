@@ -50,10 +50,9 @@ public class UMSinkConnector extends SinkConnector {
         .define(UM_TOPIC_PREFIX, Type.STRING, DEFAULT_UM_TOPIC_PREFIX, Importance.HIGH,"UM source Topic prefix")
         .define(FILE_CONFIG, Type.STRING, DEFAULT_FILE_DOT_OUT, Importance.HIGH, "Destination filename. If not specified, the standard output will be used");
 
-    //private String filename;
-    private UMSinkConnector.um_kafka_config um_config = new UMSinkConnector.um_kafka_config();
+    private final UMSinkConnector.um_kafka_config um_config = new um_kafka_config();
 
-    class um_kafka_config {
+    static class um_kafka_config {
         String um_config_file;
         String um_license_file;
         String um_topic_prefix;

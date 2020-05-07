@@ -56,7 +56,7 @@ public class UMSinkTask extends SinkTask {
     private Map<Object, LBMSource> sources = null;
     //private LBMObjectRecycler objRec = new LBMObjectRecycler();
 
-    boolean block = true;
+    final boolean block = true;
     ByteBuffer message = null;
 
     public UMSinkTask() {
@@ -123,7 +123,7 @@ public class UMSinkTask extends SinkTask {
         }
         System.out.println("UMSink::start() created context");
         srccb = new SrcCB();
-        sources = new HashMap<Object, LBMSource>();
+        sources = new HashMap<>();
 
         try {
             Thread.sleep(999);
@@ -151,7 +151,7 @@ public class UMSinkTask extends SinkTask {
             System.exit(1);
         }
         try {
-            lbmSrc = ctx.createSource(lbmTopic, srccb, (Object)srcTopicString, null);
+            lbmSrc = ctx.createSource(lbmTopic, srccb, srcTopicString, null);
             //lbmSrc.addSourceCallback(srccb, (Object)srcTopicString);
             sources.put(topicKey, lbmSrc);
         } catch (LBMException ex) {
