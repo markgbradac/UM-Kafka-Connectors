@@ -36,15 +36,14 @@ public class UMSourceConnector extends SourceConnector {
     public static final String UM_LICENSE_FILE = "um.license.file";
     public static final String UM_TOPIC = "um.topic";
     public static final String KAFKA_TOPIC = "kafka.topic";
-    public static final String TASK_BATCH_SIZE_CONFIG = "batch.size";
+    public static final String BATCH_SIZE = "batch.size";
 
-    public static final String DEFAULT_UM_WILDCARD_PATTERN = "um.*";
-    public static final String DEFAULT_UM_CONFIG_FILE = "/home/centos/um.config.file";
-    //public static final String DEFAULT_UM_LICENSE_FILE = "/home/centos/um.license.file";
-    public static final String DEFAULT_UM_LICENSE_FILE = "C:/Users/mbradac/Desktop/um-kafka-connect-master/um.license.file";
-    public static final String DEFAULT_UM_TOPIC = "UM topic 1";
-    public static final String DEFAULT_KAFKA_TOPIC = "Kafka topic 1";
-    public static final int DEFAULT_TASK_BATCH_SIZE = 2020;
+    public static final String DEFAULT_UM_WILDCARD_PATTERN = "";
+    public static final String DEFAULT_UM_CONFIG_FILE = ".um.config.file";
+    public static final String DEFAULT_UM_LICENSE_FILE = "./um.license.file";
+    public static final String DEFAULT_UM_TOPIC = "";
+    public static final String DEFAULT_KAFKA_TOPIC = "";
+    public static final int DEFAULT_BATCH_SIZE = 100;
 
     private static final ConfigDef CONFIG_DEF = new ConfigDef()
             .define(UM_WILDCARD_PATTERN, Type.STRING, DEFAULT_UM_WILDCARD_PATTERN, Importance.HIGH,"Wildcard receiver PCRE pattern")
@@ -52,7 +51,7 @@ public class UMSourceConnector extends SourceConnector {
             .define(UM_LICENSE_FILE, Type.STRING, DEFAULT_UM_LICENSE_FILE, Importance.HIGH,"Full path to the UM License file")
             .define(UM_TOPIC, Type.STRING, DEFAULT_UM_TOPIC, Importance.HIGH,"UM Topic name to subscribe to")
             .define(KAFKA_TOPIC, Type.STRING, DEFAULT_KAFKA_TOPIC, Importance.HIGH,"The kafka topic to publish data to")
-            .define(TASK_BATCH_SIZE_CONFIG, Type.INT, DEFAULT_TASK_BATCH_SIZE, Importance.LOW,"The maximum number of records the Source task can read from UM topic");
+            .define(BATCH_SIZE, Type.INT, DEFAULT_BATCH_SIZE, Importance.LOW,"The maximum number of records the Source task can read from UM topic queue");
 
     private final um_kafka_config um_config = new um_kafka_config();
 
@@ -62,7 +61,7 @@ public class UMSourceConnector extends SourceConnector {
         String um_license_file;
         String um_topic;
         String kafka_topic;
-        int task_batch_size;
+        int batch_size;
     }
 
     @Override
@@ -81,7 +80,7 @@ public class UMSourceConnector extends SourceConnector {
         um_config.um_license_file = parsedConfig.getString(UM_LICENSE_FILE);
         um_config.um_topic = parsedConfig.getString(UM_TOPIC);
         um_config.kafka_topic = parsedConfig.getString(KAFKA_TOPIC);
-        um_config.task_batch_size = parsedConfig.getInt(TASK_BATCH_SIZE_CONFIG);
+        um_config.batch_size = parsedConfig.getInt(BATCH_SIZE);
 
         if (um_config.um_config_file == null) {
             errMsg += String.format("%s must be set\n", UM_CONFIG_FILE);
@@ -105,7 +104,7 @@ public class UMSourceConnector extends SourceConnector {
         config.put(UM_LICENSE_FILE, um_config.um_license_file);
         config.put(UM_TOPIC, um_config.um_topic);
         config.put(KAFKA_TOPIC, um_config.kafka_topic);
-        config.put(TASK_BATCH_SIZE_CONFIG, String.valueOf(um_config.task_batch_size));
+        config.put(BATCH_SIZE, String.valueOf(um_config.batch_size));
         taskConfigs.add(config);
 
         return taskConfigs;

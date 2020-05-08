@@ -36,20 +36,13 @@ import static org.apache.kafka.connect.data.Schema.STRING_SCHEMA;
  */
 public class UMSourceTask extends SourceTask {
     private static final Logger logger = LoggerFactory.getLogger(UMSourceTask.class);
-    private InputStream stream;
-    private BufferedReader reader = null;
-    private char[] buffer = new char[1024];
-    private int offset = 0;
+    private InputStream stream = null;
 
     public static final String FILENAME_FIELD = "filename";
     public static final String POSITION_FIELD = "position";
 
-    private String um_wildcard_pattern;
-    private String um_config_filename;
-    private String um_topic = null;
     private String kafka_topic = null;
-    private int batchSize = UMSourceConnector.DEFAULT_TASK_BATCH_SIZE;
-    private LBM lbm;
+    private int batch_size;
 
     private static int while_loop_count = 0;
     final private BlockingQueue<LBMMessage> msgQ = new LinkedBlockingDeque<>(1000);
@@ -62,21 +55,22 @@ public class UMSourceTask extends SourceTask {
 
     @Override
     public void start(Map<String, String> props) {
-        batchSize = Integer.parseInt(props.get(UMSourceConnector.TASK_BATCH_SIZE_CONFIG));
-        System.out.println("UMSourceTask::start() batchSize: " + batchSize);
-        um_wildcard_pattern = props.get(UMSourceConnector.UM_WILDCARD_PATTERN);
+        String um_wildcard_pattern = props.get(UMSourceConnector.UM_WILDCARD_PATTERN);
         System.out.println("UMSourceTask::start() um_wildcard_pattern: " + um_wildcard_pattern);
-        um_config_filename = props.get(UMSourceConnector.UM_CONFIG_FILE);
+        String um_config_filename = props.get(UMSourceConnector.UM_CONFIG_FILE);
         System.out.println("UMSourceTask::start() um_config_filename: " + um_config_filename);
-        um_topic = props.get(UMSourceConnector.UM_TOPIC);
-        System.out.println("UMSourceTask::start() um_topic: " +  um_topic);
+        String um_license_filename = props.get(UMSourceConnector.UM_LICENSE_FILE);
+        System.out.println("UMSourceTask::start() UM_LICENSE_FILE: " + (props.get(UMSourceConnector.UM_LICENSE_FILE)));
+        String um_topic = props.get(UMSourceConnector.UM_TOPIC);
+        System.out.println("UMSourceTask::start() um_topic: " + um_topic);
         kafka_topic = props.get(UMSourceConnector.KAFKA_TOPIC);
         System.out.println("UMSourceTask::start() kafka_topic: " +  kafka_topic);
+        batch_size = Integer.parseInt(props.get(UMSourceConnector.BATCH_SIZE));
+        System.out.println("UMSourceTask::start() batch_size: " + batch_size);
 
+        LBM lbm;
         try {
-            System.out.println("UMSourceTask::start() UM_LICENSE_FILE: " + (props.get(UMSourceConnector.UM_LICENSE_FILE)));
-            LBM.setLicenseFile(props.get(UMSourceConnector.UM_LICENSE_FILE));
-            // Init LBM
+            LBM.setLicenseFile(um_license_filename);
             lbm = new LBM();
         } catch (LBMException ex) {
             String errStr = "Error initializing LBM: " + ex.toString();
@@ -136,7 +130,6 @@ public class UMSourceTask extends SourceTask {
         LBMReceiverAttributes rcv_attr;
         try {
             rcv_attr = new LBMReceiverAttributes();
-            rcv_attr.setValue("use_session_id", "33");
             rcv_attr.setValue("use_late_join", "1");
             rcv_attr.setValue("use_otr", "2");
             rcv_attr.setValue("ume_explicit_ack_only", "1");
@@ -201,7 +194,7 @@ public class UMSourceTask extends SourceTask {
                     kafka_topic, STRING_SCHEMA, msg.topicName(), BYTES_SCHEMA, msg.data());
             UMTopic.logLastSentSQN(msg.topicName(), msg.source(), msg.sequenceNumber());
             records.add(record);
-            if (records.size() >= batchSize) {
+            if (records.size() >= batch_size) {
                 return records;
             }
         }
