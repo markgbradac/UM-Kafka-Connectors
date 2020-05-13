@@ -31,14 +31,16 @@ import java.util.*;
  * UMSourceConnector
  */
 public class UMSourceConnector extends SourceConnector {
-    public static final String UM_WILDCARD_PATTERN = "um.wildcard.pattern";
+    public static final String UM_PERSIST = "um.persist";
+    public static final String UM_WILDCARD = "um.wildcard";
     public static final String UM_CONFIG_FILE = "um.config.file";
     public static final String UM_LICENSE_FILE = "um.license.file";
     public static final String UM_TOPIC = "um.topic";
     public static final String KAFKA_TOPIC = "kafka.topic";
     public static final String BATCH_SIZE = "batch.size";
 
-    public static final String DEFAULT_UM_WILDCARD_PATTERN = "";
+    public static final String DEFAULT_UM_PERSIST = "0";
+    public static final String DEFAULT_UM_WILDCARD = "0";
     public static final String DEFAULT_UM_CONFIG_FILE = ".um.config.file";
     public static final String DEFAULT_UM_LICENSE_FILE = "./um.license.file";
     public static final String DEFAULT_UM_TOPIC = "";
@@ -46,7 +48,8 @@ public class UMSourceConnector extends SourceConnector {
     public static final int DEFAULT_BATCH_SIZE = 100;
 
     private static final ConfigDef CONFIG_DEF = new ConfigDef()
-            .define(UM_WILDCARD_PATTERN, Type.STRING, DEFAULT_UM_WILDCARD_PATTERN, Importance.HIGH,"Wildcard receiver PCRE pattern")
+            .define(UM_PERSIST, Type.INT, DEFAULT_UM_PERSIST, Importance.HIGH,"Persistent receiver")
+            .define(UM_WILDCARD, Type.INT, DEFAULT_UM_WILDCARD, Importance.HIGH,"Wildcard receiver")
             .define(UM_CONFIG_FILE, Type.STRING, DEFAULT_UM_CONFIG_FILE, Importance.HIGH,"Full path to the UM configuration file")
             .define(UM_LICENSE_FILE, Type.STRING, DEFAULT_UM_LICENSE_FILE, Importance.HIGH,"Full path to the UM License file")
             .define(UM_TOPIC, Type.STRING, DEFAULT_UM_TOPIC, Importance.HIGH,"UM Topic name to subscribe to")
@@ -56,7 +59,8 @@ public class UMSourceConnector extends SourceConnector {
     private final um_kafka_config um_config = new um_kafka_config();
 
     static class um_kafka_config {
-        String um_wildcard_pattern;
+        int um_persist;
+        int um_wildcard;
         String um_config_file;
         String um_license_file;
         String um_topic;
@@ -75,7 +79,8 @@ public class UMSourceConnector extends SourceConnector {
         String errMsg = "";
 
         // TODO - need logic to map multiple topics->topics
-        um_config.um_wildcard_pattern = parsedConfig.getString(UM_WILDCARD_PATTERN);
+        um_config.um_persist = parsedConfig.getInt(UM_PERSIST);
+        um_config.um_wildcard = parsedConfig.getInt(UM_WILDCARD);
         um_config.um_config_file = parsedConfig.getString(UM_CONFIG_FILE);
         um_config.um_license_file = parsedConfig.getString(UM_LICENSE_FILE);
         um_config.um_topic = parsedConfig.getString(UM_TOPIC);
@@ -99,7 +104,8 @@ public class UMSourceConnector extends SourceConnector {
     public List<Map<String, String>> taskConfigs(int maxTasks) {
         ArrayList<Map<String, String>> taskConfigs = new ArrayList<>();
         Map<String, String> config = new HashMap<>();
-        config.put(UM_WILDCARD_PATTERN, um_config.um_wildcard_pattern);
+        config.put(UM_PERSIST, String.valueOf(um_config.um_persist));
+        config.put(UM_WILDCARD, String.valueOf(um_config.um_wildcard));
         config.put(UM_CONFIG_FILE, um_config.um_config_file);
         config.put(UM_LICENSE_FILE, um_config.um_license_file);
         config.put(UM_TOPIC, um_config.um_topic);
