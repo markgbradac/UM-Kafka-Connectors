@@ -37,7 +37,7 @@ public class UMSourceTask extends SourceTask {
     private static final Logger logger = LoggerFactory.getLogger(UMSourceTask.class);
     public static final String FILENAME_FIELD = "filename";
     public static final String POSITION_FIELD = "position";
-    public static final boolean verbose = false;
+    public static int um_verbose;
     private static int while_loop_count = 0;
 
     private String kafka_topic = null;
@@ -53,6 +53,8 @@ public class UMSourceTask extends SourceTask {
 
     @Override
     public void start(Map<String, String> props) {
+        int um_verbose = Integer.parseInt(props.get(UMSourceConnector.UM_VERBOSE));
+        System.out.println("UMSourceTask::start() um_persist: " + um_verbose);
         int um_persist = Integer.parseInt(props.get(UMSourceConnector.UM_PERSIST));
         System.out.println("UMSourceTask::start() um_persist: " + um_persist);
         int um_wildcard = Integer.parseInt(props.get(UMSourceConnector.UM_WILDCARD));
@@ -201,14 +203,17 @@ public class UMSourceTask extends SourceTask {
         records = new ArrayList<>();
 
         if (while_loop_count++ >= 10000001) {
-            logger.info("poll() - entered while loop 10,000,000 times...");
+            if (um_verbose > 0)
+                logger.info("poll() - entered while loop 10,000,000 times...");
             while_loop_count = 0;
         }
 
         LBMMessage msg;
         while ((msg = msgQ.poll()) != null) {
-            logger.info("poll() - received record topic[" + msg.topicName() + "] seqnum[" + msg.sequenceNumber() + "] for kafka topic[" + kafka_topic + "] msg.dataLength[" + msg.dataLength() + "] msg.dataString()[" + msg.dataString() + "]");
-            logger.info("         msg.data().length[" + msg.data().length + "] Arrays.toString(msg.data()[" + Arrays.toString(msg.data()) + "]");
+            if (um_verbose > 0)
+                logger.info("poll() - received record topic[" + msg.topicName() + "] seqnum[" + msg.sequenceNumber() + "] for kafka topic[" + kafka_topic + "] msg.dataLength[" + msg.dataLength() + "] msg.dataString()[" + msg.dataString() + "]");
+            if (um_verbose > 1)
+                logger.info("         msg.data().length[" + msg.data().length + "] Arrays.toString(msg.data()[" + Arrays.toString(msg.data()) + "]");
             SourceRecord record = new SourceRecord(offsetKey(msg.topicName()), offsetValue(msg.sequenceNumber()),
                     kafka_topic, STRING_SCHEMA, msg.topicName(), BYTES_SCHEMA, msg.data());
             UMTopic.logLastSentSQN(msg.topicName(), msg.source(), msg.sequenceNumber());
@@ -245,7 +250,8 @@ public class UMSourceTask extends SourceTask {
                     throw new ConnectException("commit() - last recorded offset position is the incorrect type");
                 }
                 if (lastRecordedOffset != null) {
-                    logger.info("commit() - last recorded offset[{}] for topic[{}] from source[{}] with last sent sqn[{}]", lastRecordedOffset, topic, entry.getValue().sourceString, entry.getValue().lastSentSQN);
+                    if (um_verbose > 1)
+                        logger.info("commit() - last recorded offset[{}] for topic[{}] from source[{}] with last sent sqn[{}]", lastRecordedOffset, topic, entry.getValue().sourceString, entry.getValue().lastSentSQN);
                     LinkedList<DeferredAck> list = entry.getValue().deferredAckList;
                     while (list.size() > 0) {
                         long sqn = list.getFirst().get_sqn();
@@ -260,7 +266,8 @@ public class UMSourceTask extends SourceTask {
                                     throw new ConnectException("commit() - ack dispose failed");
                                 }
                             }
-                            logger.info("           freed [{}]", sqn);
+                            if (um_verbose > 1)
+                                logger.info("           freed [{}]", sqn);
                         } else {
                             break;
                         }
@@ -313,7 +320,8 @@ class UMTopic {
     public static void logLastSentSQN(String topicName, String source, long sequenceNumber) {
         String sourceTopicString = topicName + source;
         if (UMTopic.topicMap.containsKey(sourceTopicString)) {
-            //logger.info("logLastSentSQN() - logged sqn[{}] on topic[{}] from source[{}]", sequenceNumber, topicName, source);
+            if (UMSourceTask.um_verbose > 2)
+                logger.info("logLastSentSQN() - logged sqn[{}] on topic[{}] from source[{}]", sequenceNumber, topicName, source);
             UMTopic entry = UMTopic.topicMap.get(sourceTopicString);
             entry.lastSentSQN = sequenceNumber;
         } else {
@@ -360,7 +368,8 @@ class UmRcvReceiver implements LBMReceiverCallback, LBMImmediateMessageCallback 
 
     public int onReceiveImmediate(Object cbArg, LBMMessage msg) {
         imsg_count++;
-        logger.info("onReceiveImmediate() - calling onReceive()...");
+        if (UMSourceTask.um_verbose > 1)
+            logger.info("onReceiveImmediate() - calling onReceive()...");
         return onReceive(cbArg, msg);
     }
 
@@ -395,7 +404,8 @@ class UmRcvReceiver implements LBMReceiverCallback, LBMImmediateMessageCallback 
                     return false;
                 }
             } else {
-                logger.info("                - queued sqn [" + msg.sequenceNumber() + "]");
+                if (UMSourceTask.um_verbose > 0)
+                    logger.info("                - queued sqn [" + msg.sequenceNumber() + "]");
                 return true;
             }
         }
@@ -453,7 +463,7 @@ class UmRcvReceiver implements LBMReceiverCallback, LBMImmediateMessageCallback 
     }
 
     private void end() {
-        logger.info("Quitting.... received [{}] messages" + total_msg_count + " messages");
+        logger.info("Quitting.... received [{}] messages", total_msg_count);
         System.exit(0);
     }
 }
@@ -493,14 +503,16 @@ class LBMWRcvReceiver implements LBMReceiverCallback, LBMImmediateMessageCallbac
 
     public int onReceiveImmediate(Object cbArg, LBMMessage msg) {
         imsg_count++;
-        logger.info("onReceiveImmediate() - calling onReceive()...");
+        if (UMSourceTask.um_verbose > 1)
+            logger.info("onReceiveImmediate() - calling onReceive()...");
         return onReceive(cbArg, msg);
     }
 
     Boolean handleMsgData(LBMMessage msg) {
         String sourceTopicString = msg.topicName() + msg.source();
         if (!UMTopic.topicMap.containsKey(sourceTopicString)) {
-            logger.info("handleMsgData() - discovered a new topic[{}] from source[{}]", msg.topicName(), msg.source());
+            if (UMSourceTask.um_verbose > 1)
+                logger.info("handleMsgData() - discovered a new topic[{}] from source[{}]", msg.topicName(), msg.source());
             new UMTopic(msg.topicName(), msg.source());
         }
         UMTopic entry = UMTopic.topicMap.get(sourceTopicString);
@@ -510,7 +522,8 @@ class LBMWRcvReceiver implements LBMReceiverCallback, LBMImmediateMessageCallbac
             e.printStackTrace();
         }
 
-        logger.info("handleMsgData() - received msg topic[" + msg.topicName() + "] seqn[" + msg.sequenceNumber() + "] data[" + msg.dataString() + "]");
+        if (UMSourceTask.um_verbose > 1)
+            logger.info("handleMsgData() - received msg topic[" + msg.topicName() + "] seqn[" + msg.sequenceNumber() + "] data[" + msg.dataString() + "]");
         if (stotal_msg_count == 0)
             data_start_time = System.currentTimeMillis();
         else
@@ -541,7 +554,8 @@ class LBMWRcvReceiver implements LBMReceiverCallback, LBMImmediateMessageCallbac
                     return false;
                 }
             } else {
-                logger.info("                - queued sqn [" + msg.sequenceNumber() + "]");
+                if (UMSinkTask.um_verbose > 0)
+                    logger.info("                - queued sqn [" + msg.sequenceNumber() + "]");
                 return true;
             }
         }
@@ -557,8 +571,7 @@ class LBMWRcvReceiver implements LBMReceiverCallback, LBMImmediateMessageCallbac
                 } else {
                     logger.warn("onReceive() - TODO: what should we do about failed queuing?");
                 }
-                if (UMSourceTask.verbose)
-                {
+                if (UMSourceTask.um_verbose > 0) {
                     long sqn = msg.sequenceNumber();
                     if ((msg.flags() & (LBM.MSG_FLAG_HF_32 | LBM.MSG_FLAG_HF_64)) != 0) {
                         sqn = msg.hfSequenceNumber();
@@ -598,7 +611,7 @@ class LBMWRcvReceiver implements LBMReceiverCallback, LBMImmediateMessageCallbac
                 logger.info("LBM.MSG_UNRECOVERABLE_LOSS");
                 unrec_count++;
                 total_unrec_count++;
-                if (UMSourceTask.verbose) {
+                if (UMSourceTask.um_verbose > 0) {
                     long sqn = msg.sequenceNumber();
                     if ((msg.flags() & (LBM.MSG_FLAG_HF_32 | LBM.MSG_FLAG_HF_64)) != 0) {
                         sqn = msg.hfSequenceNumber();
@@ -612,7 +625,7 @@ class LBMWRcvReceiver implements LBMReceiverCallback, LBMImmediateMessageCallbac
             case LBM.MSG_UNRECOVERABLE_LOSS_BURST:
                 logger.info("LBM.MSG_UNRECOVERABLE_LOSS_BURST");
                 burst_loss++;
-                if (UMSourceTask.verbose) {
+                if (UMSourceTask.um_verbose > 0) {
                     logger.info("[{}][{}], LOST BURST", msg.topicName(), msg.source());
                 }
                 break;
@@ -621,7 +634,7 @@ class LBMWRcvReceiver implements LBMReceiverCallback, LBMImmediateMessageCallbac
                 if (handleMsgData(msg)) {
                     doDispose = false;
                 }
-                if (UMSourceTask.verbose) {
+                if (UMSourceTask.um_verbose > 0) {
                     logger.info("Request [{}][{}], [{}] bytes [{}]",
                         msg.topicName(), msg.source(), msg.sequenceNumber(), msg.data().length);
                 }

@@ -41,10 +41,9 @@ import java.util.HashMap;
  */
 public class UMSinkTask extends SinkTask {
 
-    private static final Logger logger = LoggerFactory.getLogger(UMSinkTask.class);
+    public static int um_verbose;
 
-    private String config;
-    private String license;
+    private static final Logger logger = LoggerFactory.getLogger(UMSinkTask.class);
     private String um_topic_prefix;
     private String filename;
     private PrintStream outputStream;
@@ -75,11 +74,13 @@ public class UMSinkTask extends SinkTask {
 
     @Override
     public void start(Map<String, String> props) {
-        config = props.get(UMSinkConnector.UM_CONFIG_FILE);
-        license = props.get(UMSinkConnector.UM_LICENSE_FILE);
+        String config = props.get(UMSinkConnector.UM_CONFIG_FILE);
+        String license = props.get(UMSinkConnector.UM_LICENSE_FILE);
         um_topic_prefix = props.get(UMSinkConnector.UM_TOPIC_PREFIX);
+        um_verbose = Integer.parseInt(props.get(UMSinkConnector.UM_VERBOSE));
+
         filename = props.get(UMSinkConnector.FILE_CONFIG);
-        logger.info("start() - config[" + config + "] license[" + license + "] um_topic_prefix[" + um_topic_prefix + "] filename[" + filename + "]");
+        logger.info("start() - config[{}] license[{}] um_topic_prefix[{}] filename[{}] verbose[{}]", config, license, um_topic_prefix, filename, um_verbose);
         if (filename == null) {
             outputStream = System.out;
         } else {
@@ -166,11 +167,13 @@ public class UMSinkTask extends SinkTask {
     public void put(Collection<SinkRecord> sinkRecords) {
         LBMSource lbmSrc;
         for (SinkRecord record : sinkRecords) {
-            logger.info("put() - ************ record topic[{}] key[{}] kafka offset[{}] partition[{}]", record.topic(), record.key(), record.kafkaOffset(), record.kafkaPartition());
+            if (um_verbose > 0)
+                logger.info("put() - ************ record topic[{}] key[{}] kafka offset[{}] partition[{}]", record.topic(), record.key(), record.kafkaOffset(), record.kafkaPartition());
             if (record.value() instanceof byte[]) {
                 byte[] byteArray = (byte[]) record.value();
                 ByteBuffer byteBuffer = ByteBuffer.wrap(byteArray);
-                logger.info("      - writing sink record message [{}] from topic [{}] to log file [{}] ", StandardCharsets.UTF_8.decode(byteBuffer).toString(), record.topic(), logFilename());
+                if (um_verbose > 1)
+                    logger.info("      - writing sink record message [{}] from topic [{}] to log file [{}] ", StandardCharsets.UTF_8.decode(byteBuffer).toString(), record.topic(), logFilename());
                 byteBuffer.position(0);
                 outputStream.println(StandardCharsets.UTF_8.decode(byteBuffer).toString());
                 byteBuffer.position(0);
@@ -180,10 +183,12 @@ public class UMSinkTask extends SinkTask {
 
                 Object topicKey = record.key();
                 if (sources.containsKey(topicKey)) {
-                    logger.info("                     found key[{}]... extracting existing source from sources map of size[{}]", record.key(), sources.size());
+                    if (um_verbose > 1)
+                        logger.info("                     found key[{}]... extracting existing source from sources map of size[{}]", record.key(), sources.size());
                     lbmSrc = sources.get(topicKey);
                 } else {
-                    logger.info("                     new key[{}]... adding it to sources map of size[{}]", record.key(), sources.size());
+                    if (um_verbose > 0)
+                        logger.info("                     new key[{}]... adding it to sources map of size[{}]", record.key(), sources.size());
                     lbmSrc = createSrc(topicKey);
                     sources.put(record.key().toString(), lbmSrc);
                 }
@@ -193,7 +198,8 @@ public class UMSinkTask extends SinkTask {
                     ex.printStackTrace();
                 }
                 message.rewind();
-                logger.info("      - sent message [{}] to topic [{}]", StandardCharsets.UTF_8.decode(message).toString(), um_topic_prefix + topicKey.toString());
+                if (um_verbose > 1)
+                    logger.info("      - sent message [{}] to topic [{}]", StandardCharsets.UTF_8.decode(message).toString(), um_topic_prefix + topicKey.toString());
             }  else {
                 logger.warn("      - record.value() is an instance of [{}]", record.value().getClass().toString());
             }
@@ -202,8 +208,11 @@ public class UMSinkTask extends SinkTask {
 
     @Override
     public void flush(Map<TopicPartition, OffsetAndMetadata> offsets) {
-        logger.info("flush() - flushing {} output stream", logFilename());
+        if (um_verbose > 0)
+            logger.info("flush() - flushing {} output stream", logFilename());
         outputStream.flush();
+        if (um_verbose > 1)
+            offsets.forEach((k, v) -> logger.info("        - topic[{}] partition[{}] offset[{}]", k.topic(), k.partition(), v.offset()));
     }
 
     @Override

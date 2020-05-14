@@ -34,17 +34,20 @@ import java.util.Map;
  * sink modes via its 'mode' setting.
  */
 public class UMSinkConnector extends SinkConnector {
+    public static final String UM_VERBOSE = "um.verbose";
     public static final String UM_CONFIG_FILE = "um.config.file";
     public static final String UM_LICENSE_FILE = "um.license.file";
     public static final String UM_TOPIC_PREFIX = "um.topic.prefix";
     public static final String FILE_CONFIG = "file";
 
     public static final String DEFAULT_UM_CONFIG_FILE = "/home/centos/um.config.file";
+    public static final String DEFAULT_UM_VERBOSE = "0";
     public static final String DEFAULT_UM_LICENSE_FILE = "C:/Users/mbradac/Desktop/um-kafka-connect-master/um.license.file";
     public static final String DEFAULT_UM_TOPIC_PREFIX = "";
     public static final String DEFAULT_FILE_DOT_OUT = "file.out";
 
     private static final ConfigDef CONFIG_DEF = new ConfigDef()
+        .define(UM_VERBOSE, Type.INT, DEFAULT_UM_VERBOSE, Importance.HIGH,"Log file verbosity")
         .define(UM_CONFIG_FILE, Type.STRING, DEFAULT_UM_CONFIG_FILE, Importance.HIGH,"Full path to the UM configuration file")
         .define(UM_LICENSE_FILE, Type.STRING, DEFAULT_UM_LICENSE_FILE, Importance.HIGH,"Full path to the UM License file")
         .define(UM_TOPIC_PREFIX, Type.STRING, DEFAULT_UM_TOPIC_PREFIX, Importance.HIGH,"UM source Topic prefix")
@@ -53,6 +56,7 @@ public class UMSinkConnector extends SinkConnector {
     private final UMSinkConnector.um_kafka_config um_config = new um_kafka_config();
 
     static class um_kafka_config {
+        int um_verbose;
         String um_config_file;
         String um_license_file;
         String um_topic_prefix;
@@ -85,6 +89,7 @@ public class UMSinkConnector extends SinkConnector {
         ArrayList<Map<String, String>> taskConfigs = new ArrayList<>();
         for (int i = 0; i < maxTasks; i++) {
             Map<String, String> config = new HashMap<>();
+            config.put(UM_VERBOSE, String.valueOf(um_config.um_verbose));
             config.put(UM_CONFIG_FILE, um_config.um_config_file);
             config.put(UM_LICENSE_FILE, um_config.um_license_file);
             config.put(UM_TOPIC_PREFIX, um_config.um_topic_prefix);
