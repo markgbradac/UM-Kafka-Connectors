@@ -217,6 +217,14 @@ public class UMSinkTask extends SinkTask {
 
     @Override
     public void stop() {
+        sources.forEach((topicKey, lbmSource) -> {
+            try {
+                logger.info("stop() - closing source on topic[{}]", topicKey.toString());
+                lbmSource.close();
+            } catch (LBMException e) {
+                e.printStackTrace();
+            }
+        });
         if (outputStream != null && outputStream != System.out) {
             logger.info("stop() - closing output stream");
             outputStream.close();
