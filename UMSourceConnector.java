@@ -82,7 +82,6 @@ public class UMSourceConnector extends SourceConnector {
         AbstractConfig parsedConfig = new AbstractConfig(CONFIG_DEF, props);
         String errMsg = "";
 
-        // TODO - add verbose mode
         um_config.um_verbose = parsedConfig.getInt(UM_VERBOSE);
         um_config.um_persist = parsedConfig.getInt(UM_PERSIST);
         um_config.um_wildcard = parsedConfig.getInt(UM_WILDCARD);

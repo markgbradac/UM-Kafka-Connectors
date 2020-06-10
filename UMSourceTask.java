@@ -53,8 +53,8 @@ public class UMSourceTask extends SourceTask {
 
     @Override
     public void start(Map<String, String> props) {
-        int um_verbose = Integer.parseInt(props.get(UMSourceConnector.UM_VERBOSE));
-        System.out.println("UMSourceTask::start() um_persist: " + um_verbose);
+        um_verbose = Integer.parseInt(props.get(UMSourceConnector.UM_VERBOSE));
+        System.out.println("UMSourceTask::start() um_verbose: " + um_verbose);
         int um_persist = Integer.parseInt(props.get(UMSourceConnector.UM_PERSIST));
         System.out.println("UMSourceTask::start() um_persist: " + um_persist);
         int um_wildcard = Integer.parseInt(props.get(UMSourceConnector.UM_WILDCARD));
